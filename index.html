@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2a78d6">
+<title>WiFi Survey</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-title">
+    <svg class="logo" viewBox="0 0 100 100" aria-hidden="true">
+      <g fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round">
+        <path d="M 18 48 A 38 38 0 0 1 82 48"/>
+        <path d="M 32 60 A 21 21 0 0 1 68 60"/>
+      </g>
+      <circle cx="50" cy="76" r="7" fill="currentColor"/>
+    </svg>
+    <h1>WiFi Survey</h1>
+  </div>
+  <span id="net-chip" class="chip">…</span>
+</header>
+
+<main>
+
+<!-- ======================= MEASURE ======================= -->
+<section id="tab-measure" class="tab active">
+  <div class="card">
+    <label class="field">
+      <span>Location label</span>
+      <input id="m-label" type="text" list="label-history" placeholder="e.g. Deck 3 — mess room" autocomplete="off">
+      <datalist id="label-history"></datalist>
+    </label>
+
+    <label class="field">
+      <span>Signal strength (dBm, optional)</span>
+      <input id="m-signal" type="number" inputmode="numeric" placeholder="e.g. -62" min="-120" max="0" step="1">
+    </label>
+    <details class="hint">
+      <summary>Where do I find the dBm value?</summary>
+      <p>Browsers cannot read WiFi signal strength directly, so it is entered by hand.
+      On <strong>Android</strong>: Settings → Network &amp; internet → Internet → tap the connected
+      network — signal strength is shown there (some phones show dBm, others show it under
+      “Advanced”). A free WiFi-analyzer app also shows live dBm. On <strong>iPhone</strong> there is no
+      built-in readout; leave the field empty or use the Airport Utility scanner.
+      Rule of thumb: −50 excellent · −60 good · −70 fair · −80 weak.</p>
+    </details>
+
+    <label class="field">
+      <span>Notes (optional)</span>
+      <input id="m-notes" type="text" placeholder="e.g. door closed, AP behind bulkhead" autocomplete="off">
+    </label>
+
+    <div class="row gap">
+      <button id="btn-pin" class="btn secondary" type="button">📍 Pin on site plan</button>
+      <span id="pin-state" class="dim"></span>
+    </div>
+    <div id="gps-state" class="dim small"></div>
+  </div>
+
+  <button id="btn-start" class="btn primary big" type="button">Start measurement</button>
+
+  <div id="live" class="card live hidden">
+    <div id="live-phase" class="live-phase">Preparing…</div>
+    <div id="live-value" class="live-value">—</div>
+    <div id="live-unit" class="live-unit"></div>
+    <div class="progress"><div id="live-bar" class="progress-bar"></div></div>
+    <button id="btn-cancel" class="btn secondary" type="button">Cancel</button>
+  </div>
+
+  <div id="result" class="card hidden">
+    <h2>Result <span id="result-saved" class="chip good">saved to log</span></h2>
+    <div class="stats">
+      <div class="stat"><div class="stat-label">Download</div><div class="stat-value" id="r-down">—</div><div class="stat-unit">Mbit/s</div></div>
+      <div class="stat"><div class="stat-label">Upload</div><div class="stat-value" id="r-up">—</div><div class="stat-unit">Mbit/s</div></div>
+      <div class="stat"><div class="stat-label">Ping</div><div class="stat-value" id="r-ping">—</div><div class="stat-unit">ms</div></div>
+      <div class="stat"><div class="stat-label">Jitter</div><div class="stat-value" id="r-jitter">—</div><div class="stat-unit">ms</div></div>
+    </div>
+    <div id="r-extra" class="dim small"></div>
+  </div>
+
+  <p class="dim small">
+    Bandwidth is measured against the server chosen in Settings. With the default internet
+    server the result includes the shore/satellite link; for a pure WiFi-only figure use a
+    test server on the local network (see Settings → Help).
+  </p>
+</section>
+
+<!-- ======================= LOG ======================= -->
+<section id="tab-log" class="tab">
+  <div class="row gap wrap">
+    <button id="btn-export-csv" class="btn secondary" type="button">Export CSV</button>
+    <button id="btn-export-json" class="btn secondary" type="button">Export JSON</button>
+    <button id="btn-clear-log" class="btn danger" type="button">Clear all</button>
+  </div>
+  <p id="log-count" class="dim small"></p>
+  <div id="log-list"></div>
+</section>
+
+<!-- ======================= MAP ======================= -->
+<section id="tab-map" class="tab">
+  <div class="row gap wrap">
+    <div class="seg" role="group" aria-label="Map mode">
+      <button id="map-mode-plan" class="seg-btn active" type="button">Site plan</button>
+      <button id="map-mode-gps" class="seg-btn" type="button">GPS</button>
+    </div>
+    <label class="field inline">
+      <span>Colour by</span>
+      <select id="map-metric">
+        <option value="down">Download (Mbit/s)</option>
+        <option value="up">Upload (Mbit/s)</option>
+        <option value="ping">Ping (ms)</option>
+        <option value="signal">Signal (dBm)</option>
+      </select>
+    </label>
+  </div>
+  <div class="map-wrap">
+    <canvas id="map-canvas"></canvas>
+    <p id="map-empty" class="dim center hidden"></p>
+  </div>
+  <div id="map-legend" class="legend"></div>
+  <div id="point-info" class="card hidden"></div>
+</section>
+
+<!-- ======================= SETTINGS ======================= -->
+<section id="tab-settings" class="tab">
+  <div class="card">
+    <h2>Test server</h2>
+    <label class="field">
+      <span>Server</span>
+      <select id="s-server">
+        <option value="cloudflare">Internet (Cloudflare speed servers)</option>
+        <option value="custom">Custom / local network server</option>
+      </select>
+    </label>
+    <div id="s-custom-fields" class="hidden">
+      <label class="field">
+        <span>Download URL (a large file, ≥ 50 MB)</span>
+        <input id="s-down-url" type="url" placeholder="http://192.168.1.10:8080/test.bin">
+      </label>
+      <label class="field">
+        <span>Upload URL (optional, accepts POST)</span>
+        <input id="s-up-url" type="url" placeholder="http://192.168.1.10:8080/upload">
+      </label>
+      <p class="dim small">Leave upload empty to skip the upload phase.</p>
+    </div>
+    <label class="field">
+      <span>Test duration per direction</span>
+      <select id="s-duration">
+        <option value="4">4 s (quick)</option>
+        <option value="8" selected>8 s (normal)</option>
+        <option value="15">15 s (thorough)</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="card">
+    <h2>Location</h2>
+    <label class="row gap">
+      <input id="s-gps" type="checkbox" checked>
+      <span>Record GPS position with each measurement</span>
+    </label>
+    <div class="field" style="margin-top:12px">
+      <span>Site plan / deck plan image</span>
+      <div class="row gap wrap" style="margin-top:6px">
+        <input id="s-plan-file" type="file" accept="image/*" class="hidden">
+        <button id="btn-plan-upload" class="btn secondary" type="button">Upload plan…</button>
+        <button id="btn-plan-remove" class="btn danger hidden" type="button">Remove plan</button>
+      </div>
+      <img id="s-plan-thumb" class="plan-thumb hidden" alt="Current site plan">
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Data</h2>
+    <div class="row gap wrap">
+      <button id="btn-import" class="btn secondary" type="button">Import JSON…</button>
+      <input id="s-import-file" type="file" accept="application/json,.json" class="hidden">
+    </div>
+    <p class="dim small">Everything is stored locally on this device — nothing is uploaded
+    anywhere. Use Export in the Log tab to move data off the phone.</p>
+  </div>
+
+  <div class="card">
+    <h2>Help</h2>
+    <details class="hint">
+      <summary>Install on the phone (works offline)</summary>
+      <p>Open this page in Chrome (Android) or Safari (iPhone) and choose
+      <strong>Add to Home Screen</strong>. After the first visit the app itself loads without
+      any internet connection; only the speed test needs a reachable server.</p>
+    </details>
+    <details class="hint">
+      <summary>Measuring pure WiFi throughput (no satellite link)</summary>
+      <p>The default servers are on the internet, so offshore the result is limited by the
+      shore/VSAT link. To measure only the WiFi link, run a test server on a laptop on the
+      same network:</p>
+      <pre>dd if=/dev/urandom of=test.bin bs=1M count=200
+npx http-server -p 8080 --cors</pre>
+      <p>then set the custom download URL to <code>http://&lt;laptop-ip&gt;:8080/test.bin</code>.
+      <strong>Note:</strong> the HTTPS-hosted app cannot call plain <code>http://</code> LAN
+      addresses (browser mixed-content rule). For LAN tests, serve this app from the same
+      laptop instead — it is a plain static site; see the README in the repository.</p>
+    </details>
+    <details class="hint">
+      <summary>What this app can and cannot measure</summary>
+      <p>Browsers expose no API for WiFi signal strength (RSSI), channel or BSSID — that is why
+      dBm is entered manually. What is measured automatically: download/upload throughput,
+      latency and jitter against the chosen server, plus the browser's own connection estimate
+      (type, downlink, RTT) where available.</p>
+    </details>
+    <p class="dim small" id="about-version"></p>
+  </div>
+</section>
+
+</main>
+
+<nav class="tabbar">
+  <button class="tabbar-btn active" data-tab="tab-measure" type="button"><span class="tabbar-ico">📶</span>Measure</button>
+  <button class="tabbar-btn" data-tab="tab-log" type="button"><span class="tabbar-ico">📋</span>Log</button>
+  <button class="tabbar-btn" data-tab="tab-map" type="button"><span class="tabbar-ico">🗺️</span>Map</button>
+  <button class="tabbar-btn" data-tab="tab-settings" type="button"><span class="tabbar-ico">⚙️</span>Settings</button>
+</nav>
+
+<!-- Plan pin modal -->
+<div id="plan-modal" class="modal hidden">
+  <div class="modal-box">
+    <h2>Tap your position on the plan</h2>
+    <div class="map-wrap"><canvas id="plan-canvas"></canvas></div>
+    <div class="row gap end">
+      <button id="btn-pin-clear" class="btn secondary" type="button">Clear pin</button>
+      <button id="btn-pin-done" class="btn primary" type="button">Done</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
